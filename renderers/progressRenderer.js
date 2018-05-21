@@ -1,9 +1,7 @@
 'use strict';
 
 const fs = require('fs')
-    , ipc = require('electron').ipcRenderer
-    , remote = require('electron').remote
-    , parentWindow = remote.getCurrentWindow().id;
+    , ipc = require('electron').ipcRenderer;
 
 const {getWinDrives, getWinDisksize, getWinFreeSpace} = require('./rendererHelpers')
 

@@ -3,26 +3,12 @@
 const fs = require('fs')
     , url = require('url')
     , path = require('path')
-    , ipc = require('electron').ipcRenderer
-    , remote = require('electron').remote
-    , progressWindow = remote.BrowserWindow
-    , parentWindow = remote.getCurrentWindow().id;
+    , ipc = require('electron').ipcRenderer;
 
 const {getWinDrives, getWinDisksize, getWinFreeSpace} = require('./rendererHelpers')
 
 let drivesObj = {}
   , previousDrivesObj = {};
-
-function getFolderContents(folder, callback) {
-  fs.readdir('/', (err, files) => {
-    //if an error is thrown when reading the directory, we throw it. Otherwise we continue
-    if (err) throw err;
-    //the files parameter is an array of the files and folders in the path we passed. So we loop through the array, printing each file and folder
-    for (let file of files) {
-      console.log(file);
-    }
-  });
-}
 
 function init(callback) {
   // Get Drive Info
