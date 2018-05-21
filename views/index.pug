@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+
+html
+  head
+    title Disk Change Monitor
+
+    link(rel="stylesheet" href="css/global.css")
+
+  body
+    div#driveInfoDiv
+      div#driveSelectDiv
+        h2 Available Drives:
+
+        select#driveList.driveList(size="3", multiple)
+
+      div#previousInfoDiv
+        h2#previousInfoText Previous Information
+
+        select#previousInfoList.driveList(size="3", multiple)
+
+    div#driveInfoDiv
+      h4 Select the drives that you wish to examine and press Go to start
+
+      button#analyze(type="button") Go
+
+    div#driveInfoDiv(style="display: block;")
+      h2 Drive Analysis
+
+      textarea#results(readonly)
+
+    script.
+      require('../renderers/renderer.js')

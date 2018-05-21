@@ -1,0 +1,87 @@
+body {
+  color: white;
+  background-color: floralwhite;
+}
+
+#driveInfoDiv {
+  width: 765px;
+
+  display: inline-flex;
+
+  margin-top: 5px;
+  padding: 5px;
+
+  border: 2px solid lightgray;
+  border-style: inset;
+
+  background-color: darkgoldenrod;
+}
+
+#driveSelectDiv {
+  margin: 10px;
+}
+
+#previousInfoDiv {
+  margin: 10px;
+}
+
+.driveList {
+  width: 300px;
+  height: 6em;
+
+  padding: 5px;
+
+  background-color: blanchedalmond;
+}
+
+.driveList > option {
+  margin: 3px;
+}
+
+#previousInfoList {
+  width: 430px;
+
+  background-color: blanchedalmond;
+}
+
+#analyze {
+  height: 25px;
+  width: 60px;
+
+  background-color: darkolivegreen;
+  color: white;
+
+  margin-left: 20px;
+  margin-top: 18px;
+}
+
+#results {
+  width: 755px;
+  height: 150px;
+
+  resize: none;
+
+  background-color: blanchedalmond;
+}
+
+.progressDiv {
+  width: 510px;
+
+  margin-top: 10px;
+
+  overflow-x: hidden;
+
+  border: 2px solid gray;
+  border-style: inset;
+
+  padding: 5px;
+}
+
+#cancelButton {
+  height: 30px;
+  width: 60px;
+
+  background-color: darkolivegreen;
+  color: white;
+}
+

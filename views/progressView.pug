@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+
+html
+  head
+    title Progress
+
+    link(rel="stylesheet" href="css/global.css")
+
+  body(style="background-color: lightblue; color: black;")
+    .progressDiv
+      span#currentDirectory(style="white-space: nowrap; width: 100%;")
+
+    .progressDiv
+      progress#progressBar(max="100", value="0", style="width: 510px;")
+
+    .progressDiv(style="text-align: center; display: block;")
+      button#cancelButton(type="button") Cancel
+
+    script.
+      require('../renderers/progressRenderer.js')
