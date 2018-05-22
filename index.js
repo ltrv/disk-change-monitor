@@ -9,12 +9,18 @@ const {app, BrowserWindow, ipcMain, dialog} = require('electron')
     , pug = require('electron-pug')({pretty: true}, locals);
 
 
+const maxProcesses = 10;
+
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow = null
   , progressWindow = null;
 
 let children = [];
+
+let folderQueue = [];
+
+let appState = "Idle";
 
 /**
  * existingStructure and newStructure are objects to hold disk information  They contain:
@@ -44,6 +50,7 @@ let children = [];
 let existingStructure = {}
   , newStructure = {}
   , currentStructure = {}
+  , selectedDriveList = {}
   , ttlBytesProcessed = 0
   , ttlFolders = 0
   , ttlFiles = 0;
@@ -54,6 +61,21 @@ function resetData() {
   ttlBytesProcessed = 0;
   ttlFolders = 0;
   ttlFiles = 0;
+  appState = "Idle";
+  folderQueue = [];
+}
+
+function getObjPathObject(path) {
+  const parts = path.split( "\\" )
+      , length = parts.length 
+
+  let property = newStructure;
+
+  for ( let i = 0; i < length; i++ ) {
+    property = property[parts[i]];
+  }
+
+  return property;
 }
 
 function createMainWindow() {
@@ -69,6 +91,7 @@ function createMainWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    mainWindow.webContents.send('message', {command: 'init'});
   }); 
 
   // Open the DevTools.
@@ -112,9 +135,9 @@ function createProgressWindow(callback) {
 function initApp() {
   // Create fork'd processes
 
-  for (let x = 0; x < 10; x++) {
+  for (let x = 0; x < maxProcesses; x++) {
     const aChild = {
-      child: cp.fork(`${__dirname}/child.js`),
+      child: cp.fork(`${__dirname}/child.js`, ["--debug"]),
       isReady: false,
       isActive: false
     }
@@ -124,7 +147,7 @@ function initApp() {
     console.log(`Starting child process: ${x}`)
 
     children[x].child.on('message', (m) => {
-      console.log(`PARENT got message: `, m);
+      // console.log(`PARENT got message: `, m);
 
       if (m.index || m.index == 0) {
         switch(m.command) {
@@ -132,6 +155,34 @@ function initApp() {
           children[m.index].isReady = true;
           children[m.index].isActive = false;
           break;
+
+          case "doDirectoryComplete":
+          children[m.index].isActive = false;
+
+          if (m.data) {
+            let objPath = getObjPathObject(m.data.path);
+
+            for (let key in m.data.objPath) {
+              objPath[key] = m.data.objPath[key];
+
+              if (objPath[key].type == 1) {
+                ttlBytesProcessed += objPath[key].size;
+                newStructure[m.data.driveListKey].ttlFiles += 1;
+              } else {
+                newStructure[m.data.driveListKey].ttlFolders += 1;
+                
+                folderQueue.push({folder: `${objPath[key].path}\\`, driveListKey: m.data.driveListKey, path: `${m.data.path}\\${key}\\subFolders`});
+              }
+            }
+
+            if (progressWindow) {
+              progressWindow.webContents.send('message', {command: "updateProgress", data: ttlBytesProcessed});
+            }
+          }
+
+          checkFolderQueue();
+          break;
+
         }
       } else {
         console.error("Unable to process child message.  No index")
@@ -163,90 +214,56 @@ app.on('activate', function () {
   }
 })
 
-function getEachFolderItem(fileList, curIndex, folder, objPath, callback) {
-  if (!fileList || curIndex >= fileList.length) {
-    callback();
-  } else {
-    fs.lstat(`${folder}${fileList[curIndex]}`, (err, statObj) => {
-      if (err) {
-        if (err.code == "EPERM" || err.code == "EBUSY" || err.code == "ENOENT") {
-          console.error(`Unable to lstat: ${folder}${fileList[curIndex]}.  Error ${JSON.stringify(err, null, 4)}`);
-          getEachFolderItem(fileList, curIndex + 1, folder, objPath, callback);
-        } else {
-          callback(err);
-        }
-      } else {
-        if (statObj.isDirectory()) {
-          ttlFolders += 1;
-
-          objPath[fileList[curIndex]] = {name: fileList[curIndex], type: 0, path: `${folder}${fileList[curIndex]}`, subFolders: {}};
-
-          getFolderContents(`${folder}${fileList[curIndex]}\\`, objPath[fileList[curIndex]]["subFolders"], (err) => {
-            if (err) callback(err);
-            else getEachFolderItem(fileList, curIndex + 1, folder, objPath, callback);
-          });
-        } else if (statObj.isSymbolicLink()) {
-          // do nothing
-
-          getEachFolderItem(fileList, curIndex + 1, folder, objPath, callback);
-        } else if (statObj.isFile()) {
-          ttlFiles += 1;
-
-          objPath[fileList[curIndex]] = {name: fileList[curIndex], type: 1, size: statObj.size};
-
-          ttlBytesProcessed += statObj.size;
-
-          if (progressWindow) {
-            progressWindow.webContents.send('message', {command: "updateProgress", data: ttlBytesProcessed});
-          }
-          getEachFolderItem(fileList, curIndex + 1, folder, objPath, callback);
-        } else {
-          console.error(`Got unknown directory entry: ${folder}${fileList[curIndex]}`);
-
-          getEachFolderItem(fileList, curIndex + 1, folder, objPath, callback);
-        }
-      }
-    });
-  }
-}
-
-// Note that folder must always in in "\"
-
-function getFolderContents(folder, objPath, callback) {
+function onDone() {
   if (progressWindow) {
-    progressWindow.webContents.send('message', {command: "updateFolder", data: folder});
+    progressWindow.close();
 
-    fs.readdir(folder, (err, files) => {
-      if (err) {
-        callback(err);
-      } else {
-        getEachFolderItem(files, 0, folder, objPath, callback);
-      }
+    const thePath = path.join(__dirname, "data",  'previousDriveInfo.json')
+
+    fs.writeFile(thePath, JSON.stringify(newStructure), (err) => {
+      console.log("Done");
+      appState = "idle";
     });
-  } else {
-    callback("Progress Window is null");
+    // mainWindow.webContents.send('message', {command: "displayResults", data: ""});
+    // console.log("Results: " + JSON.stringify(newStructure, null, 4));
   }
 }
 
-function getEachDriveData(driveList, curIndex, callback) {
-  if (!driveList || curIndex >= driveList.length) {
-    callback();
-  } else {
-    newStructure[driveList[curIndex]]["folders"] = {};
+function checkFolderQueue() {
+  if (appState == "running" && folderQueue.length > 0) {
+    for (let x = 0; x < maxProcesses; x++) {
+      if (children[x].isReady && !children[x].isActive) {
+        children[x].isActive = true;
 
-    getFolderContents(`${driveList[curIndex]}\\`, newStructure[driveList[curIndex]]["folders"], (err) => {
-      if (err) {
-        callback(err);
-      } else {
-        newStructure[driveList[curIndex]]["ttlFiles"] = ttlFiles;
-        newStructure[driveList[curIndex]]["ttlFolders"] = ttlFolders;
+        const folderQueueData = folderQueue.shift();
 
-        ttlFiles = 0;
-        ttlFolders = 0;
-
-        getEachDriveData(driveList, curIndex + 1, callback);
+        children[x].child.send({ command: 'doDirectory', data: folderQueueData});
+        checkFolderQueue();
+        break;
       }
-    });
+    }
+  } else if (appState == "running" && folderQueue.length == 0) {
+    // Check to see if there's any children running.  If not, assume we're done
+
+    let foundOne = false;
+    for (let x = 0; x < maxProcesses; x++) {
+      if (children[x].isReady && children[x].isActive) {
+        foundOne = true;
+        break;
+      }
+    }
+
+    if (!foundOne) {
+      // Assume we're done
+
+      // newStructure[driveList[curIndex]]["ttlFiles"] = ttlFiles;
+      // newStructure[driveList[curIndex]]["ttlFolders"] = ttlFolders;
+
+      // ttlFiles = 0;
+      // ttlFolders = 0;
+
+      onDone();
+    }
   }
 }
 
@@ -256,7 +273,8 @@ ipcMain.on('mainWindow', (event, message) => {
   switch(message.command) {
     case "analyze":
     if (message.data && message.data.selectedDriveList && message.data.selectedDriveList.length > 0 && 
-        message.data.drivesObj && Object.keys(message.data.drivesObj).length > 0) {
+        message.data.drivesObj && Object.keys(message.data.drivesObj).length > 0 ||
+        appState == "Idle") {
 
       resetData();
 
@@ -265,29 +283,20 @@ ipcMain.on('mainWindow', (event, message) => {
       createProgressWindow(() => {
         progressWindow.webContents.send('message', {command: "init", data: message.data});
 
-        getEachDriveData(message.data.selectedDriveList, 0, (err) => {
-          if (err) {
-            if (progressWindow) {
-              progressWindow.close();
-              dialog.showMessageBox({type: "none", title: "Error", message: `Error getting disk information.  Err: ${err}`});
-            }
-          } else {
-            if (progressWindow) {
-              progressWindow.close();
+        appState = "running";
 
-              const thePath = path.join(__dirname, "data",  'previousDriveInfo.json')
+        selectedDriveList = message.data.selectedDriveList;
 
-              fs.writeFile(thePath, JSON.stringify(newStructure), (err) => {
-                console.log("Done");
-              });
-              // mainWindow.webContents.send('message', {command: "displayResults", data: ""});
-              // console.log("Results: " + JSON.stringify(newStructure, null, 4));
-            }
-          }
+        message.data.selectedDriveList.forEach((aDrive) => {
+          newStructure[aDrive]["folders"] = {};
+          folderQueue.push({folder: `${aDrive}\\`, driveListKey: aDrive, path: `${aDrive}\\folders`});
         });
+
+        checkFolderQueue();
       });
     } else if (!message.data.drivesObj || Object.keys(message.data.drivesObj).length == 0) {
       dialog.showMessageBox({type: "none", title: "Error", message: "Unable to obtain disk information"});
+    } else if (appState != "idle") {
     } else {
       dialog.showMessageBox({type: "none", title: "Error", message: "You did not select any drives to analyse"});
     }

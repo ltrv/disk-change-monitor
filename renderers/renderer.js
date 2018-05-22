@@ -88,22 +88,26 @@ function init(callback) {
   });
 }
 
-init(() => {
-  document.getElementById("analyze").addEventListener("click", function() {
-    const displayListSelect = document.getElementById('driveList');
 
-    const driveList = Array.prototype.slice.call(document.querySelectorAll('#driveList option:checked'), 0).map(function(v, i, a) { 
-        return v.value; 
-    });
-
-    ipc.send('mainWindow', {command: "analyze", data: {drivesObj: drivesObj, selectedDriveList: driveList}});
-  });  
-});
 
 ipc.on('message', (event, message) => {
   console.log(JSON.stringify(message, null, 4));
 
   switch(message.command) {
+    case "init":
+    init(() => {
+      document.getElementById("analyze").addEventListener("click", function() {
+        const displayListSelect = document.getElementById('driveList');
+
+        const driveList = Array.prototype.slice.call(document.querySelectorAll('#driveList option:checked'), 0).map(function(v, i, a) { 
+            return v.value; 
+        });
+
+        ipc.send('mainWindow', {command: "analyze", data: {drivesObj: drivesObj, selectedDriveList: driveList}});
+      });  
+    });
+    break;
+
     case "displayResults":
     const data = ipc.sendSync("mainWindow", {command: "getResults", data: ""});
 
